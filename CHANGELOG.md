@@ -5,6 +5,12 @@ All notable changes to claude-code-spawn will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2025-01-21
+
+### Fixed
+- Fixed Claude process hanging by explicitly closing stdin
+- Prevents timeout issues when Claude waits for additional input
+
 ## [1.1.0] - 2025-01-21
 
 ### Added

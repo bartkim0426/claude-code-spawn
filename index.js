@@ -79,6 +79,11 @@ async function runCommand(command, args = [], options = {}) {
       stdio
     });
 
+    // Close stdin for Claude processes to prevent hanging
+    if (command === 'claude' && childProcess.stdin) {
+      childProcess.stdin.end();
+    }
+
     let stdout = '';
     let stderr = '';
     let timedOut = false;
