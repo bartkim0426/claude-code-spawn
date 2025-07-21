@@ -40,6 +40,10 @@ async function runCommand(command, args = [], options = {}) {
     logging = true
   } = options;
 
+  // Clean environment to avoid nested Claude execution issues
+  const cleanEnv = { ...env };
+  delete cleanEnv.CLAUDECODE;
+
   return new Promise((resolve, reject) => {
     if (logging) {
       console.log(`[Claude Spawn] Executing: ${command} ${args.join(' ')}`);
@@ -48,7 +52,7 @@ async function runCommand(command, args = [], options = {}) {
 
     const childProcess = spawn(command, args, {
       cwd,
-      env,
+      env: cleanEnv,
       detached,
       stdio
     });
