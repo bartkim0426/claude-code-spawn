@@ -5,7 +5,7 @@
  * Command-line interface for claude-code-spawn
  */
 
-const { runClaude, runCommand, testSimpleCommand } = require('../index');
+const { runClaude, runCommand, testSimpleCommand, getRecentSessions, viewLog } = require('../index');
 const path = require('path');
 
 function printUsage() {
@@ -15,6 +15,7 @@ Claude Code Spawn CLI
 Usage:
   claude-spawn [options] "<prompt>"
   claude-spawn --test
+  claude-spawn logs [options]
   claude-spawn --help
 
 Options:
@@ -23,15 +24,24 @@ Options:
   --cwd <path>         Set working directory
   --no-permissions     Skip permission prompts
   --quiet              Minimal output
+  --save-log           Save execution logs to file
+  --log-dir <path>     Directory for logs (default: ./claude-spawn-logs)
   --test               Run test suite
   --version            Show version
   --help               Show this help
 
+Log Commands:
+  claude-spawn logs                List recent sessions
+  claude-spawn logs <session-id>   View specific session log
+
 Examples:
   claude-spawn "What is 2+2?"
   claude-spawn --fire-and-forget "Analyze this project"
+  claude-spawn --save-log "Debug this code"
   claude-spawn --timeout 30000 "Complex analysis task"
   claude-spawn --cwd ./project "Improve the code here"
+  claude-spawn logs
+  claude-spawn logs 1737456789-12345
   claude-spawn --test
 
 Environment:
@@ -59,11 +69,69 @@ async function main() {
     timeout: parseInt(process.env.CLAUDE_SPAWN_TIMEOUT) || null,
     cwd: process.cwd(),
     dangerouslySkipPermissions: true,
-    logging: process.env.CLAUDE_SPAWN_QUIET !== '1'
+    logging: process.env.CLAUDE_SPAWN_QUIET !== '1',
+    saveLog: false,
+    logDir: null
   };
 
   let prompt = '';
   let i = 0;
+
+  // Handle logs command
+  if (args[0] === 'logs') {
+    try {
+      if (args[1]) {
+        // View specific session
+        const logs = await viewLog(args[1], options.logDir);
+        console.log(`\nSession: ${args[1]}\n`);
+        
+        for (const entry of logs) {
+          switch (entry.type) {
+            case 'session_start':
+              console.log(`[${entry.timestamp}] Started: ${entry.command} ${entry.args.join(' ')}`);
+              console.log(`  Working directory: ${entry.cwd}`);
+              break;
+            case 'stdout':
+              if (entry.data.trim()) {
+                console.log(`[STDOUT] ${entry.data.trim()}`);
+              }
+              break;
+            case 'stderr':
+              if (entry.data.trim()) {
+                console.error(`[STDERR] ${entry.data.trim()}`);
+              }
+              break;
+            case 'error':
+              console.error(`[ERROR] ${entry.message}`);
+              break;
+            case 'session_end':
+              console.log(`[${entry.timestamp}] Ended: code=${entry.code}, duration=${entry.duration}ms`);
+              break;
+          }
+        }
+      } else {
+        // List recent sessions
+        const sessions = await getRecentSessions(options.logDir, 20);
+        
+        if (sessions.length === 0) {
+          console.log('No sessions found');
+        } else {
+          console.log('Recent sessions:\n');
+          for (const session of sessions) {
+            console.log(`${session.sessionId}`);
+            console.log(`  Command: ${session.command} ${session.args.join(' ')}`);
+            console.log(`  Time: ${session.timestamp}`);
+            console.log('');
+          }
+          console.log(`\nTo view a session: claude-spawn logs <session-id>`);
+        }
+      }
+      process.exit(0);
+    } catch (error) {
+      console.error('Error:', error.message);
+      process.exit(1);
+    }
+  }
 
   while (i < args.length) {
     const arg = args[i];
@@ -138,6 +206,19 @@ async function main() {
         options.logging = false;
         break;
 
+      case '--save-log':
+        options.saveLog = true;
+        break;
+
+      case '--log-dir':
+        i++;
+        if (i >= args.length) {
+          console.error('Error: --log-dir requires a path');
+          process.exit(1);
+        }
+        options.logDir = path.resolve(args[i]);
+        break;
+
       default:
         if (arg.startsWith('-')) {
           console.error(`Error: Unknown option ${arg}`);
@@ -180,6 +261,10 @@ async function main() {
     } else {
       if (options.logging) {
         console.log('✅ Claude completed successfully');
+        if (options.saveLog && result.sessionId) {
+          console.log(`   Session ID: ${result.sessionId}`);
+          console.log(`   Log file: ${result.logFile}`);
+        }
         console.log('\n--- Response ---');
       }
       console.log(result.stdout);

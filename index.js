@@ -9,6 +9,7 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
+const Logger = require('./lib/logger');
 
 // Check for nested Claude execution
 if (process.env.CLAUDECODE) {
@@ -28,6 +29,10 @@ if (process.env.CLAUDECODE) {
  * @param {string|Array} options.stdio - Stdio configuration
  * @param {number} options.timeout - Timeout in milliseconds
  * @param {boolean} options.logging - Enable logging
+ * @param {boolean} options.saveLog - Save logs to file
+ * @param {string} options.logDir - Directory to save logs
+ * @param {string} options.logLevel - Log level ('full' or 'minimal')
+ * @param {boolean} options.logToConsole - Log to console
  * @returns {Promise<Object>} Promise that resolves with the result
  */
 async function runCommand(command, args = [], options = {}) {
@@ -37,17 +42,34 @@ async function runCommand(command, args = [], options = {}) {
     detached = false,
     stdio = 'pipe',
     timeout = null,
-    logging = true
+    logging = true,
+    saveLog = false,
+    logDir,
+    logLevel = 'full',
+    logToConsole = logging
   } = options;
 
   // Clean environment to avoid nested Claude execution issues
   const cleanEnv = { ...env };
   delete cleanEnv.CLAUDECODE;
 
-  return new Promise((resolve, reject) => {
-    if (logging) {
+  // Initialize logger if saveLog is enabled
+  const logger = new Logger({
+    saveLog,
+    logDir,
+    logLevel,
+    logToConsole
+  });
+
+  return new Promise(async (resolve, reject) => {
+    if (logging && !saveLog) {
       console.log(`[Claude Spawn] Executing: ${command} ${args.join(' ')}`);
       console.log(`[Claude Spawn] Working directory: ${cwd}`);
+    }
+
+    // Initialize logging
+    if (saveLog) {
+      await logger.initialize(command, args);
     }
 
     const childProcess = spawn(command, args, {
@@ -75,43 +97,61 @@ async function runCommand(command, args = [], options = {}) {
     if (stdio === 'pipe') {
       childProcess.stdout?.on('data', (data) => {
         stdout += data.toString();
-        if (logging) {
+        if (saveLog) {
+          logger.logStdout(data);
+        } else if (logging) {
           process.stdout.write(`[stdout] ${data}`);
         }
       });
 
       childProcess.stderr?.on('data', (data) => {
         stderr += data.toString();
-        if (logging) {
+        if (saveLog) {
+          logger.logStderr(data);
+        } else if (logging) {
           process.stderr.write(`[stderr] ${data}`);
         }
       });
     }
 
-    childProcess.on('error', (error) => {
+    childProcess.on('error', async (error) => {
       if (timeoutId) clearTimeout(timeoutId);
-      if (logging) {
+      if (saveLog) {
+        await logger.logError(error);
+      }
+      if (logging && !saveLog) {
         console.error(`[Claude Spawn] Process error: ${error.message}`);
       }
       reject(error);
     });
 
-    childProcess.on('exit', (code, signal) => {
+    childProcess.on('exit', async (code, signal) => {
       if (timeoutId) clearTimeout(timeoutId);
       if (timedOut) return; // Already rejected
 
-      if (logging) {
+      if (saveLog) {
+        await logger.logExit(code, signal);
+      }
+
+      if (logging && !saveLog) {
         console.log(`[Claude Spawn] Process exited with code ${code} and signal ${signal}`);
       }
 
+      const result = {
+        success: code === 0,
+        stdout,
+        stderr,
+        code,
+        pid: childProcess.pid
+      };
+
+      if (saveLog) {
+        result.sessionId = logger.sessionId;
+        result.logFile = logger.logFile;
+      }
+
       if (code === 0) {
-        resolve({
-          success: true,
-          stdout,
-          stderr,
-          code,
-          pid: childProcess.pid
-        });
+        resolve(result);
       } else {
         reject(new Error(`Command failed with code ${code}: ${stderr || stdout}`));
       }
@@ -153,7 +193,7 @@ async function runClaude(prompt, options = {}) {
     ...otherOptions
   } = options;
 
-  const args = [];
+  const args = ['-p'];
   
   if (dangerouslySkipPermissions) {
     args.push('--dangerously-skip-permissions');
@@ -266,5 +306,9 @@ module.exports = {
   testSimpleCommand,
   
   // Legacy aliases for backwards compatibility
-  runClaudeImprovement: runClaudeTask
+  runClaudeImprovement: runClaudeTask,
+  
+  // Log viewing utilities
+  getRecentSessions: Logger.getRecentSessions,
+  viewLog: Logger.viewLog
 };
