@@ -1,0 +1,51 @@
+{
+  "name": "claude-code-spawn",
+  "version": "1.0.0",
+  "description": "A Node.js module for spawning and managing Claude CLI processes with proper error handling and logging",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "bin": {
+    "claude-spawn": "./bin/claude-spawn"
+  },
+  "scripts": {
+    "test": "node test/test.js",
+    "example:basic": "node examples/basic-usage.js",
+    "example:fire-and-forget": "node examples/fire-and-forget.js",
+    "example:web-improvement": "node examples/web-improvement.js"
+  },
+  "keywords": [
+    "claude",
+    "claude-cli",
+    "ai",
+    "spawn",
+    "process",
+    "automation",
+    "claude-code"
+  ],
+  "author": "bartkim0426",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bartkim0426/claude-code-spawn.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bartkim0426/claude-code-spawn/issues"
+  },
+  "homepage": "https://github.com/bartkim0426/claude-code-spawn#readme",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "files": [
+    "index.js",
+    "lib/",
+    "bin/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "peerDependencies": {
+    "@anthropic-ai/claude-code": ">=1.0.0"
+  },
+  "devDependencies": {},
+  "dependencies": {}
+}

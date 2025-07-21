@@ -1,0 +1,221 @@
+#!/usr/bin/env node
+
+/**
+ * Claude Code Spawn CLI Tool
+ * Command-line interface for claude-code-spawn
+ */
+
+const { runClaude, runCommand, testSimpleCommand } = require('../index');
+const path = require('path');
+
+function printUsage() {
+  console.log(`
+Claude Code Spawn CLI
+
+Usage:
+  claude-spawn [options] "<prompt>"
+  claude-spawn --test
+  claude-spawn --help
+
+Options:
+  --fire-and-forget    Run in background mode
+  --timeout <ms>       Set timeout in milliseconds
+  --cwd <path>         Set working directory
+  --no-permissions     Skip permission prompts
+  --quiet              Minimal output
+  --test               Run test suite
+  --version            Show version
+  --help               Show this help
+
+Examples:
+  claude-spawn "What is 2+2?"
+  claude-spawn --fire-and-forget "Analyze this project"
+  claude-spawn --timeout 30000 "Complex analysis task"
+  claude-spawn --cwd ./project "Improve the code here"
+  claude-spawn --test
+
+Environment:
+  CLAUDE_SPAWN_TIMEOUT    Default timeout (ms)
+  CLAUDE_SPAWN_QUIET      Set to '1' for quiet mode
+`);
+}
+
+function printVersion() {
+  const packageJson = require('../package.json');
+  console.log(`claude-spawn v${packageJson.version}`);
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+  
+  if (args.length === 0) {
+    printUsage();
+    process.exit(1);
+  }
+
+  // Parse arguments
+  const options = {
+    fireAndForget: false,
+    timeout: parseInt(process.env.CLAUDE_SPAWN_TIMEOUT) || null,
+    cwd: process.cwd(),
+    dangerouslySkipPermissions: true,
+    logging: process.env.CLAUDE_SPAWN_QUIET !== '1'
+  };
+
+  let prompt = '';
+  let i = 0;
+
+  while (i < args.length) {
+    const arg = args[i];
+
+    switch (arg) {
+      case '--help':
+      case '-h':
+        printUsage();
+        process.exit(0);
+        break;
+
+      case '--version':
+      case '-v':
+        printVersion();
+        process.exit(0);
+        break;
+
+      case '--test':
+        console.log('Running test suite...\n');
+        try {
+          const results = await testSimpleCommand({ logging: true });
+          
+          const passed = Object.values(results).filter(r => r.success).length;
+          const total = Object.keys(results).length;
+          
+          console.log(`\nTest Results: ${passed}/${total} passed`);
+          
+          if (passed === total) {
+            console.log('✅ All tests passed!');
+            process.exit(0);
+          } else {
+            console.log('❌ Some tests failed');
+            process.exit(1);
+          }
+        } catch (error) {
+          console.error('Test suite failed:', error.message);
+          process.exit(1);
+        }
+        break;
+
+      case '--fire-and-forget':
+        options.fireAndForget = true;
+        break;
+
+      case '--timeout':
+        i++;
+        if (i >= args.length) {
+          console.error('Error: --timeout requires a value');
+          process.exit(1);
+        }
+        options.timeout = parseInt(args[i]);
+        if (isNaN(options.timeout)) {
+          console.error('Error: timeout must be a number');
+          process.exit(1);
+        }
+        break;
+
+      case '--cwd':
+        i++;
+        if (i >= args.length) {
+          console.error('Error: --cwd requires a path');
+          process.exit(1);
+        }
+        options.cwd = path.resolve(args[i]);
+        break;
+
+      case '--no-permissions':
+        options.dangerouslySkipPermissions = false;
+        break;
+
+      case '--quiet':
+        options.logging = false;
+        break;
+
+      default:
+        if (arg.startsWith('-')) {
+          console.error(`Error: Unknown option ${arg}`);
+          process.exit(1);
+        }
+        prompt = arg;
+        break;
+    }
+    i++;
+  }
+
+  if (!prompt) {
+    console.error('Error: No prompt provided');
+    printUsage();
+    process.exit(1);
+  }
+
+  // Execute Claude
+  try {
+    if (options.logging) {
+      console.log('🤖 Starting Claude...');
+      if (options.fireAndForget) {
+        console.log('   Mode: Fire-and-forget (background)');
+      }
+      if (options.timeout) {
+        console.log(`   Timeout: ${options.timeout}ms`);
+      }
+      console.log(`   Working directory: ${options.cwd}`);
+      console.log('');
+    }
+
+    const result = await runClaude(prompt, options);
+
+    if (options.fireAndForget) {
+      if (options.logging) {
+        console.log('✅ Claude started in background');
+        console.log(`   Process ID: ${result.pid}`);
+        console.log('   You can continue with other work');
+      }
+    } else {
+      if (options.logging) {
+        console.log('✅ Claude completed successfully');
+        console.log('\n--- Response ---');
+      }
+      console.log(result.stdout);
+    }
+
+  } catch (error) {
+    console.error('❌ Claude execution failed:');
+    console.error('  ', error.message);
+
+    if (error.message.includes('Credit balance')) {
+      console.error('\n💡 Tip: This error often occurs when running inside Claude Code environment');
+      console.error('   Try running from a regular terminal or deploy to a server');
+    }
+
+    if (error.message.includes('Command not found')) {
+      console.error('\n💡 Tip: Make sure Claude CLI is installed:');
+      console.error('   npm install -g @anthropic-ai/claude-code');
+    }
+
+    process.exit(1);
+  }
+}
+
+// Handle uncaught errors gracefully
+process.on('uncaughtException', (error) => {
+  console.error('Unexpected error:', error.message);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (error) => {
+  console.error('Unhandled promise rejection:', error.message);
+  process.exit(1);
+});
+
+// Run the CLI
+main().catch((error) => {
+  console.error('CLI error:', error.message);
+  process.exit(1);
+});
